@@ -1,0 +1,149 @@
+#include "BluetoothSerial.h" // заголовочный файл для последовательного Bluetooth будет добавлен по умолчанию в Arduino
+#include <ESP32Servo.h>
+
+#define PARSE_AMOUNT 2 
+
+struct Dot
+{
+  int x;
+  int y;
+};
+
+hw_timer_t * timer = NULL;
+
+BluetoothSerial ESP_BT; // Объект для Bluetooth
+Servo servoLR; //боковой <90 влево
+Servo servoUD;  //верхний <90 вверх
+char incoming;
+static const int servo1Pin = 18;
+static const int servo2Pin = 17;
+
+volatile bool state = false;
+
+int intData[PARSE_AMOUNT];     // массив численных значений после парсинга
+boolean recievedFlag;
+boolean getStarted;
+byte ind = 0;
+String string_convert = "";
+
+void parsing() {
+  if (ESP_BT.available() > 0) {
+    char incomingByte = ESP_BT.read();        // обязательно ЧИТАЕМ входящий символ
+    if (getStarted) {                         // если приняли начальный символ (парсинг разрешён)
+      if (incomingByte != ' ' && incomingByte != ';') {   // если это не пробел И не конец
+        string_convert += incomingByte;       // складываем в строку
+      } else {                                // если это пробел или ; конец пакета
+        intData[ind] = string_convert.toInt();  // преобразуем строку в int и кладём в массив
+        string_convert = "";                  // очищаем строку
+        ind++;                              // переходим к парсингу следующего элемента массива
+      }                             // переходим к парсингу следующего элемента массива
+    }
+    if (incomingByte == '$') {                // если это $
+      getStarted = true;                      // поднимаем флаг, что можно парсить
+      ind = 0;                              // сбрасываем индекс
+      string_convert = "";                    // очищаем строку
+    }
+    if (incomingByte == ';') {                // если таки приняли ; - конец парсинга
+      getStarted = false;                     // сброс
+      recievedFlag = true;                    // флаг на принятие
+    }
+  }
+}
+//void IRAM_ATTR onTimer(){
+//  state = !state;
+//  digitalWrite(16, state);
+//}
+
+void setup() {
+  Serial.begin(9600); // Запускаем последовательный монитор со скоростью 9600
+  ESP_BT.begin("ESP32_Hunter"); // Задаем имя вашего устройства Bluetooth
+  Serial.println("Bluetooth Device is Ready to Pair");  // По готовности сообщаем, что устройство готово к сопряжению
+    // Allow allocation of all timers
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  servoLR.setPeriodHertz(50);    // standard 50 hz servo
+  servoUD.setPeriodHertz(50);    // standard 50 hz servo
+  servoLR.attach(servo1Pin, 1000, 2000); // attaches the servo on pin 18 to the servo object
+  servoUD.attach(servo2Pin, 1000, 2000); // attaches the servo on pin 18 to the servo object
+  servoLR.write(45);
+  servoUD.write(45);
+  delay(500);
+  servoLR.write(90);
+  servoUD.write(90);
+  pinMode(16, OUTPUT);
+  digitalWrite(16, 1);
+//    /* Use 1st timer of 4 */
+//  /* 1 tick take 1/(80MHZ/80) = 1us so we set divider 80 and count up */
+//  timer = timerBegin(1, 80, true);
+//
+//  /* Attach onTimer function to our timer */
+//  timerAttachInterrupt(timer, &onTimer, true);
+//
+//  /* Set alarm to call onTimer function every second 1 tick is 1us
+//  => 1 second is 1000000us */
+//  /* Repeat the alarm (third parameter) */
+//  timerAlarmWrite(timer, 1000000, true);
+//
+//  /* Start an alarm */
+//  timerAlarmEnable(timer);
+//  Serial.println("start timer");
+}
+
+const int DISTANCE = 320;
+const double PIX_DENSITY = 0.18;
+const int K = 3;
+const double I = 4.24;
+
+void calculation_angle(int point_x, int point_y){
+  point_x *= K;
+  point_y *= K;
+  Serial.println("pX and pY are " + String(point_x) + ' ' + String(point_y));
+  double man_x = point_x * PIX_DENSITY;
+  double man_y = point_y * PIX_DENSITY;
+  Serial.println("X and Y are " + String(man_x) + ' ' + String(man_y));
+  double A = degrees(atan(man_x / DISTANCE));
+  double B = degrees(atan(man_y / DISTANCE));
+  A *= I;
+  B *= I;
+  Serial.println("A and B are " + String(A) + ' ' + String(B));
+  A = abs(round(A))+10;
+  B = abs(round(B))+10;
+  if (man_x <= 172.5){  
+    servoLR.write(90-A);
+    Serial.print("minus ");
+    Serial.println(A);
+  }
+  else{
+    servoLR.write(A);
+    Serial.print("plus ");
+    Serial.println(A);
+  }
+  if (man_y <= 92.5){    
+    servoUD.write(90-B);
+    Serial.print("minus ");
+    Serial.println(B);
+  }
+  else{
+    servoUD.write(B);
+    Serial.print("plus ");
+    Serial.println(B);
+  }
+}
+
+void loop() {
+  parsing();       // функция парсинга
+  if (recievedFlag) {                           // если получены данные
+    recievedFlag = false;
+    for (byte i = 0; i < PARSE_AMOUNT; i++) { // выводим элементы массива
+      Serial.print(intData[i]); Serial.print(" ");
+    } Serial.println();
+    Dot dot1;
+    dot1.x=intData[1];
+    dot1.y=intData[0];
+    calculation_angle(dot1.x, dot1.y);
+    
+//    Serial.println();
+  }
+}
