@@ -1,68 +1,137 @@
+# import the necessary packages
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 import numpy as np
 import time
 import cv2
+import serial
+import re
+import glob
 
-kray=0
-s=0
-verh_x=0
-verh_y=0
-niz_x=0
-niz_y=0
-color_yellow = (0,255,255)
-color_green = (0,255,0)
+color_win = (255,255,0)
+color_red = (0,0,255)
 color_pink = (255,0,255)
-sr_x=0
-sr_y=0
+
+key = 0
+
+ports = glob.glob('/dev/rfcomm[0-9]*')
+ser = None
+for port in ports:
+    try:
+        ser = serial.Serial(port)
+    except Exception:
+        print("Serial port " + port + " is closed")
+        ser = None    
+if ser == None:
+    exit(1)
+
+print(ser.name)
+
+# initialize the camera and grab a reference to the raw camera capture
 camera = PiCamera()
-camera.resolution = (640, 480)
+camera.resolution = (640, 360)
 camera.framerate = 32
-camera.color_effects = (128, 128)
-camera.sharpness = 100
-camera.contrast = 100
-rawCapture = PiRGBArray(camera, size=(640, 480))
+
+rawCapture = PiRGBArray(camera, size=(640, 360))
 
 time.sleep(0.1)
 
+# capture frames from the camera
 for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+    
+    ser.write(b'$')
+    
     image = frame.array
     
-    gray = cv2.GaussianBlur(image, (3, 3), 1)
-    ret, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY)
-
-    for x in range(480):
-        for y in range(640):
-            if x==0 and y ==0:
-                kray = set(binary[x,y])
-            else:
-                if set(binary[x, y])!=kray and s==0:
-                    verh_x=x
-                    verh_y=y
-                    s=1703
-                    break
-    for x in range(479,0,-1):
-        for y in range(639,0,-1):
-            if set(binary[x, y])!=kray and s!=0:
-                    niz_x=x
-                    niz_y=y
-                    s=0
-                    break
-    print('верхний край',verh_x,verh_y)
-    print('нижний край',niz_x,niz_y)
-    sr_x=(verh_x+niz_x)//2
-    sr_y=(verh_y+niz_y)//2
-    radius=niz_x-sr_x
+    redImage = image.copy()
+    redImage[(redImage[:,:,0]>30) | (redImage[:,:,1]>30) | (redImage[:,:,2]<70)] = 0
+    greenImage=image.copy()
+    greenImage[(greenImage[:,:,0]>50) | (greenImage[:,:,1]<90) | (greenImage[:,:,2]>50)] = 0
+    ret, binary = cv2.threshold(image, 80, 255, cv2.THRESH_BINARY)
+#     binary = image.astype(np.uint8)
+    binImage = binary
+    binRImage = binary
+   # binRImage = binRImage / 128
+    binRImage = binRImage.astype(np.uint8)
+#     greenImage = greenImage / 255
+#     greenImage = greenImage.astype(np.uint8)
+    coordDot1 = []
+    coordDot2 = []
+    coordDotR1 = []
     
-    cv2.circle(binary,(sr_y,sr_x), 5, color_green,2)
-    cv2.putText(binary,"%d-%d" % (sr_y,sr_x), (sr_x+10,sr_y+10), cv2.FONT_HERSHEY_SIMPLEX, 1, color_green,2)
-    cv2.circle(binary,(sr_y,sr_x), radius, color_pink,2)
-    cv2.putText(binary,"%d-%d" % (sr_y,sr_x), (sr_x+10,sr_y+10), cv2.FONT_HERSHEY_SIMPLEX, 1, color_pink,2)
-    cv2.imshow("Frame", binary)
+    for y in range(360):
+        try:
+            string = greenImage[y, :]
+            if 0 in string:
+                coordX = np.where(string >0)
+                yCoord = y
+                coordDot1 = [coordX[0][0], yCoord]
+    #             print(coordDot1)
+                break
+        except IndexError:
+            coordDot1 = [0, 0]
+            continue
 
+    for x in range(640):
+        try:
+            column = greenImage[:, x]
+            if 0 in column:
+                coordY = np.where(column >0)
+                xCoord = x
+                coordDot2 = [xCoord, coordY[0][0]]
+    #             print(coordDot2)   
+                break
+        except IndexError:
+            coordDot2= [0, 0]
+            continue
+
+    for y in range(360):
+        try:
+            string = redImage[y, :]
+            if 0 in string:
+                coordRX = np.argwhere(string >0)
+                yRCoord = y
+                coordDotR1 = [coordRX[0][0], yRCoord]
+    #             print(coordDotR1)
+                break_flag = True
+                break
+                
+        except IndexError:
+            coordDotR1 = [0, 0]
+            break_flag = False
+            continue
+    if break_flag==True:
+        cv2.destroyAllWindows()
+        cv2.putText(image,'YOU WIN!', (0,180), cv2.FONT_HERSHEY_SIMPLEX, 4.5, color_win,5)
+        cv2.imshow("YOU WIN", image)
+        cv2.waitKey(0)
+        ser.close()
+        break
+    print(coordDotR1)
+    print(coordDot1, coordDot2)
+
+#     cv2.putText(image,"%d-%d" % (circleCenterR[0],circleCenterR[1]), (circleCenterR[1]+10,circleCenterR[0]+10), cv2.FONT_HERSHEY_SIMPLEX, 1, color_win,2)
+    radius = (abs(coordDot1[0] - coordDot2[0]) + abs(coordDot1[1] - coordDot2[1])) // 2
+    circleCenter = [coordDot1[1] + radius, coordDot2[0] + radius]
+    sr_x = circleCenter[0]
+    sr_y = circleCenter[1]
+    cv2.circle(image,(sr_y,sr_x), 5, color_red,2)
+#     cv2.putText(image,"%d-%d" % (sr_y,sr_x), (sr_x+10,sr_y+10), cv2.FONT_HERSHEY_SIMPLEX, 1, color_red,2)
+    cv2.circle(image,(sr_y,sr_x), radius, color_pink,10)
+    cv2.putText(image,"%d-%d" % (circleCenter[0],circleCenter[1]), (circleCenter[1]+10,circleCenter[0]+10), cv2.FONT_HERSHEY_SIMPLEX, 1, color_pink,2)
+    cv2.imshow("Frame", image)
+    
+    for i in circleCenter:
+        I=str(i)
+        ser.write(I.encode('utf-8'))
+        ser.write(b' ')
+    
+    ser.write(b';')
+    
     key = cv2.waitKey(1) & 0xFF
-
     rawCapture.truncate(0)
 
-    if key == ord("q"):
+    if key == ord('q'):
+        ser.close()
         break
+
