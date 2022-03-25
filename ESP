@@ -2,6 +2,7 @@
 #include <ESP32Servo.h>
 
 #define PARSE_AMOUNT 2 
+unsigned long timing; // Переменная для хранения точки отсчета
 
 struct Dot
 {
@@ -18,7 +19,7 @@ char incoming;
 static const int servo1Pin = 18;
 static const int servo2Pin = 17;
 
-volatile bool state = false;
+bool state = false;
 
 int intData[PARSE_AMOUNT];     // массив численных значений после парсинга
 boolean recievedFlag;
@@ -61,8 +62,6 @@ void setup() {
     // Allow allocation of all timers
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
   servoLR.setPeriodHertz(50);    // standard 50 hz servo
   servoUD.setPeriodHertz(50);    // standard 50 hz servo
   servoLR.attach(servo1Pin, 1000, 2000); // attaches the servo on pin 18 to the servo object
@@ -72,11 +71,10 @@ void setup() {
   delay(500);
   servoLR.write(90);
   servoUD.write(90);
-  pinMode(16, OUTPUT);
-  digitalWrite(16, 1);
+  pinMode(4, OUTPUT);
 //    /* Use 1st timer of 4 */
 //  /* 1 tick take 1/(80MHZ/80) = 1us so we set divider 80 and count up */
-//  timer = timerBegin(1, 80, true);
+//  timer = timerBegin(2, 80, true);
 //
 //  /* Attach onTimer function to our timer */
 //  timerAttachInterrupt(timer, &onTimer, true);
@@ -88,7 +86,7 @@ void setup() {
 //
 //  /* Start an alarm */
 //  timerAlarmEnable(timer);
-//  Serial.println("start timer");
+  Serial.println("start timer");
 }
 
 const int DISTANCE = 320;
@@ -110,7 +108,7 @@ void calculation_angle(int point_x, int point_y){
   Serial.println("A and B are " + String(A) + ' ' + String(B));
   A = abs(round(A))+10;
   B = abs(round(B))+10;
-  if (man_x <= 172.5){  
+  if (man_x <= 160){  
     servoLR.write(90-A);
     Serial.print("minus ");
     Serial.println(A);
@@ -120,7 +118,7 @@ void calculation_angle(int point_x, int point_y){
     Serial.print("plus ");
     Serial.println(A);
   }
-  if (man_y <= 92.5){    
+  if (man_y <= 80){    
     servoUD.write(90-B);
     Serial.print("minus ");
     Serial.println(B);
@@ -136,6 +134,7 @@ void loop() {
   parsing();       // функция парсинга
   if (recievedFlag) {                           // если получены данные
     recievedFlag = false;
+//    digitalWrite(16, HIGH);
     for (byte i = 0; i < PARSE_AMOUNT; i++) { // выводим элементы массива
       Serial.print(intData[i]); Serial.print(" ");
     } Serial.println();
@@ -146,4 +145,12 @@ void loop() {
     
 //    Serial.println();
   }
+  if (millis() - timing >= 2000){ // Вместо 10000 подставьте нужное вам значение паузы
+    timing = millis();
+    //state = !state;
+    //digitalWrite(4, state);
+    digitalWrite(4, !digitalRead(4));
+    Serial.println(state);
+  }
+//  digitalWrite(16, LOW);
 }
