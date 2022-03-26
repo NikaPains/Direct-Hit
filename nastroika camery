@@ -1,0 +1,79 @@
+# import the necessary packages
+from picamera.array import PiRGBArray
+from picamera import PiCamera
+import numpy as np
+import time
+import cv2
+
+
+def drawMyContours(winName, image, contours, draw_on_blank):
+    # cv2.drawContours(image, contours, index, color, line_width)
+         # Входные параметры:
+         # изображение: изображение холста того же размера, что и исходное изображение (также может быть исходным изображением)
+         # контуры: контуры (список питонов)
+         # index: индекс контура (при значении -1 нарисуйте все контуры)
+         # цвет: цвет линии,
+         # line_width: толщина линии
+         # Вернуть контурное изображение
+    if (draw_on_blank): # нарисовать контур на белом фоне
+        temp = np.ones(image.shape, dtype=np.uint8)*255
+        cv2.drawContours(temp, contours, -1, (0, 0, 0), 2)
+    else:
+        temp = image.copy()
+        cv2.drawContours(temp, contours, -1, (0, 0, 255), 2)
+    cv2.imshow(winName, temp)
+    cv2.waitKey()
+
+
+
+# initialize the camera and grab a reference to the raw camera capture
+camera = PiCamera()
+camera.resolution = (640, 360)
+camera.framerate = 32
+# camera.saturation = -100
+# camera.color_effects = (128, 128)
+# camera.sharpness = 100
+# camera.contrast = 100
+rawCapture = PiRGBArray(camera, size=(640, 360))
+
+
+# allow the camera to warmup
+time.sleep(0.1)
+
+# capture frames from the camera
+for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+    # grab the raw NumPy array representing the image, then initialize the timestamp
+    # and occupied/unoccupied text
+    image = frame.array
+    
+#     median_intensity = np.median(image)
+#     lower_threshold = int(max(0, (1.0-0.33)*median_intensity))
+#     upper_threshold = int(min(255, (1.0+0.33)*median_intensity))
+#     image_canny = cv2.Canny(image,lower_threshold,upper_threshold)
+
+    gray = cv2.GaussianBlur(image, (3, 3), 1)
+    ret, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY)
+#     cv2.imshow("binary", binary)
+     
+   # element = cv2.getStructuringElement (cv2.MORPH_RECT, (3, 3)) 
+    #binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, element)
+    
+ 
+    cv2.imshow("morphology", binary)
+    
+  #  contours, hierarchy = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+  #  print("find", len(contours), "contours")
+    
+    
+   # drawMyContours("find contours", image, contours, True)
+
+    # show the frame
+    cv2.imshow("Frame", image)
+    key = cv2.waitKey(1) & 0xFF
+
+    # clear the stream in preparation for the next frame
+    rawCapture.truncate(0)
+
+    # if the 'q' key was pressed, break from the loop
+    if key == ord("q"):
+        break
